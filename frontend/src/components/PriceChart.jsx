@@ -22,42 +22,41 @@ const PriceChart = ({ symbol, height = 300, showAxes = true }) => {
 
   useEffect(() => {
     setLoading(true);
-    axios.get(`https://cryptopulse-backend-k5bn.onrender.com/api/history/${symbol}`)
+
+    axios.get(`https://cryptopulse-ml.onrender.com/predict?symbol=${symbol}`)
       .then(res => {
-        const formatted = res.data.map(item => {
-           const d = new Date(item.timestamp);
-           return {
-             time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-             price: item.price
-           };
-        });
-        
-        if (formatted.length === 0) {
-            const mock = [];
-            let price = 60000;
-            for(let i=0; i<100; i++) {
-                price += (Math.random() * 200 - 80);
-                mock.push({ time: i, price: price });
-            }
-            setData(mock);
-        } else {
-            setData(formatted);
-        }
+
+        console.log("ML DATA:", res.data);
+
+        const formatted = res.data.predictions.map(p => ({
+          time: `H${p.hour}`,   // hour label
+          price: p.predicted_price
+        }));
+
+        setData(formatted);
         setLoading(false);
+
       })
       .catch(err => {
-        console.error("History error:", err);
+        console.error("ML error:", err);
         setLoading(false);
       });
+
   }, [symbol]);
 
   if (loading) {
-     return (
-       <div className="w-full h-full bg-[var(--color-surface)] flex flex-col items-center justify-center">
-         <div className="w-5 h-5 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin mb-2"></div>
-         <span className="text-xs uppercase tracking-widest text-gray-500">Retrieving dataset</span>
-       </div>
-     );
+    return (
+      <div className="w-full h-full bg-[var(--color-surface)] flex flex-col items-center justify-center">
+        <div className="w-5 h-5 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin mb-2"></div>
+        <span className="text-xs uppercase tracking-widest text-gray-500">
+          Loading AI Forecast...
+        </span>
+      </div>
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return <div className="text-gray-400 text-center">No data available</div>;
   }
 
   return (
@@ -69,21 +68,20 @@ const PriceChart = ({ symbol, height = 300, showAxes = true }) => {
             <stop offset="100%" stopColor="#0070F3" stopOpacity={0}/>
           </linearGradient>
         </defs>
-        {showAxes && <XAxis dataKey="time" stroke="rgba(255,255,255,0.1)" tick={{fill: '#888', fontSize: 11, fontFamily: 'Inter'}} axisLine={false} tickLine={false} minTickGap={50} dy={10} />}
-        {showAxes && <YAxis domain={['auto', 'auto']} stroke="transparent" tick={{fill: '#888', fontSize: 11, fontFamily: 'Inter'}} width={65} tickFormatter={(val) => `₹${val.toLocaleString()}`} />}
+
+        {showAxes && <XAxis dataKey="time" stroke="rgba(255,255,255,0.1)" tick={{fill: '#888', fontSize: 11}} />}
+        {showAxes && <YAxis domain={['auto', 'auto']} stroke="transparent" tick={{fill: '#888', fontSize: 11}} />}
         {showAxes && <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" />}
-        
-        <Tooltip content={<CustomTooltip />} cursor={{stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1}} />
-        
+
+        <Tooltip content={<CustomTooltip />} />
+
         <Area 
-          type="stepAfter" 
+          type="monotone" 
           dataKey="price" 
           stroke="#0070F3" 
           strokeWidth={2}
           fillOpacity={1} 
           fill="url(#colorRefined)" 
-          isAnimationActive={true}
-          animationDuration={1500}
         />
       </AreaChart>
     </ResponsiveContainer>
