@@ -14,128 +14,69 @@ const User = require('./models/User');
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
+  cors: { origin: '*' }
 });
 
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/cryptopulse';
 
-// Connect to MongoDB
-mongoose.connect(MONGO_URI)
+// 🔴 MongoDB (skip if not using cloud DB)
+mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/cryptopulse')
   .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.log(err));
+  .catch(() => console.log('MongoDB skipped (no DB)'));
 
-// Crypto Data Schema
-const CryptoDataSchema = new mongoose.Schema({
-  symbol: String,
-  price: Number,
-  timestamp: { type: Date, default: Date.now }
-});
-
-const CryptoData = mongoose.model('CryptoData', CryptoDataSchema);
-
-// 🔥 MOCK DATA (since WebSocket disabled)
+// 🔥 MOCK DATA
 const recentData = {
-  BTC: { price: 50000, change: 0, history: [] },
-  ETH: { price: 3000, change: 0, history: [] },
-  BNB: { price: 400, change: 0, history: [] },
-  SOL: { price: 100, change: 0, history: [] }
+  BTC: { price: 50000 },
+  ETH: { price: 3000 },
+  BNB: { price: 400 },
+  SOL: { price: 100 }
 };
 
-// 🔥 Send dummy updates every 5 sec (so UI still works)
+// 🔥 Fake live updates
 setInterval(() => {
   Object.keys(recentData).forEach(symbol => {
-    const randomChange = (Math.random() - 0.5) * 100;
-    recentData[symbol].price += randomChange;
+    const change = (Math.random() - 0.5) * 50;
+    recentData[symbol].price += change;
 
     io.emit('price-update', {
       symbol,
-      price: recentData[symbol].price,
-      timestamp: new Date()
+      price: recentData[symbol].price
     });
   });
 }, 5000);
 
-// News API
-app.get('/api/news', async (req, res) => {
-  try {
-    const NEWS_API_KEY = process.env.NEWS_API_KEY;
-    if (!NEWS_API_KEY) return res.json({ articles: [], sentiment: 0.5 });
-
-    const response = await axios.get(
-      `https://newsapi.org/v2/everything?q=crypto&apiKey=${NEWS_API_KEY}`
-    );
-
-    res.json({
-      articles: response.data.articles.slice(0, 5),
-      sentiment: 0.5
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch news' });
-  }
-});
-
-// History API
-app.get('/api/history/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
-  try {
-    const data = await CryptoData.find({ symbol }).sort({ timestamp: -1 }).limit(100);
-    res.json(data.reverse());
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch history' });
-  }
-});
-
-// Socket connection
+// 🔥 Socket
 io.on('connection', (socket) => {
   console.log('Client connected');
   socket.emit('initial-data', recentData);
 });
 
-// Portfolio API
-app.get('/api/portfolio/:userId', async (req, res) => {
+// 🔥 Simple API (test)
+app.get('/', (req, res) => {
+  res.send('CryptoPulse Backend Running 🚀');
+});
+
+// 🔥 News API
+app.get('/api/news', async (req, res) => {
   try {
-    let user = await User.findOne({ userId: req.params.userId });
-    if (!user) {
-      user = await User.create({ userId: req.params.userId, cashBalance: 8350000 });
-    }
-    res.json(user);
+    res.json({ articles: [], sentiment: 0.5 });
   } catch {
     res.status(500).json({ error: 'Failed' });
   }
 });
 
-// Trade API
-app.post('/api/trade', async (req, res) => {
-  const { userId, symbol, side, amount, price } = req.body;
+// 🔥 Portfolio
+app.get('/api/portfolio/:userId', async (req, res) => {
+  res.json({
+    cashBalance: 8350000,
+    holdings: {},
+    tradeHistory: []
+  });
+});
 
-  try {
-    let user = await User.findOne({ userId });
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const totalCost = amount * price;
-
-    if (side === 'BUY') {
-      if (user.cashBalance < totalCost) {
-        return res.status(400).json({ error: 'Insufficient funds' });
-      }
-      user.cashBalance -= totalCost;
-      user.holdings.set(symbol, (user.holdings.get(symbol) || 0) + amount);
-    } else {
-      user.cashBalance += totalCost;
-      user.holdings.set(symbol, (user.holdings.get(symbol) || 0) - amount);
-    }
-
-    await user.save();
-    res.json(user);
-
-  } catch (err) {
-    res.status(500).json({ error: 'Trade failed' });
-  }
+// 🔥 Trade
+app.post('/api/trade', (req, res) => {
+  res.json({ success: true });
 });
 
 server.listen(PORT, () => {
