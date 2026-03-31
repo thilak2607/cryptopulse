@@ -8,7 +8,6 @@ CORS(app)
 
 SUPPORTED_COINS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA"]
 
-# 🔥 COINGECKO MAPPING
 COIN_MAP = {
     "BTC": "bitcoin",
     "ETH": "ethereum",
@@ -18,43 +17,54 @@ COIN_MAP = {
     "ADA": "cardano"
 }
 
+# 🔥 CACHE (IMPORTANT)
+LAST_PRICE_CACHE = {}
+LAST_HISTORY_CACHE = {}
 
-# 🔥 LIVE PRICE (BINANCE + FALLBACK)
+
+# 🔥 LIVE PRICE
 def get_live_price(symbol):
     try:
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=10)
         data = res.json()
 
         if "price" in data:
-            return float(data["price"]) * 83
+            price = float(data["price"]) * 83
+            LAST_PRICE_CACHE[symbol] = price
+            return price
 
     except Exception as e:
-        print("Binance price failed:", e)
+        print("Binance failed:", e)
 
     try:
         coin_id = COIN_MAP.get(symbol, "bitcoin")
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=inr"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=10)
         data = res.json()
 
-        return data[coin_id]["inr"]
+        price = data[coin_id]["inr"]
+        LAST_PRICE_CACHE[symbol] = price
+        return price
 
     except Exception as e:
-        print("CoinGecko price failed:", e)
+        print("CoinGecko failed:", e)
 
-    return None
+    # 🔥 FINAL FALLBACK
+    return LAST_PRICE_CACHE.get(symbol, None)
 
 
-# 🔥 HISTORICAL DATA (BINANCE + FALLBACK)
+# 🔥 HISTORICAL DATA
 def get_historical_data(symbol):
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval=1h&limit=50"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=10)
         data = res.json()
 
         if isinstance(data, list):
-            return [float(c[4]) * 83 for c in data]
+            prices = [float(c[4]) * 83 for c in data]
+            LAST_HISTORY_CACHE[symbol] = prices
+            return prices
 
     except Exception as e:
         print("Binance history failed:", e)
@@ -62,19 +72,21 @@ def get_historical_data(symbol):
     try:
         coin_id = COIN_MAP.get(symbol, "bitcoin")
         url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=inr&days=2"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=10)
         data = res.json()
 
-        prices = data.get("prices", [])
-        return [p[1] for p in prices[-50:]]
+        prices = [p[1] for p in data.get("prices", [])[-50:]]
+        LAST_HISTORY_CACHE[symbol] = prices
+        return prices
 
     except Exception as e:
         print("CoinGecko history failed:", e)
 
-    return []
+    # 🔥 FINAL FALLBACK
+    return LAST_HISTORY_CACHE.get(symbol, [])
 
 
-# 🔥 TREND-BASED PREDICTION
+# 🔥 PREDICTION
 def predict_prices(prices):
     if len(prices) < 10:
         return []
@@ -128,22 +140,16 @@ def predict():
     current_price = get_live_price(symbol)
     historical_prices = get_historical_data(symbol)
 
-    # 🔥 FAIL SAFE (IMPORTANT)
-    if current_price is None or len(historical_prices) < 10:
-        return jsonify({
-            "error": "Market data temporarily unavailable",
-            "hint": "Try again in few seconds"
-        }), 200
-
     predictions = predict_prices(historical_prices)
-    signal, confidence = generate_signal(current_price, predictions)
+    signal, confidence = generate_signal(current_price or 0, predictions)
 
     return jsonify({
         "symbol": symbol,
-        "current_price": round(current_price, 2),
+        "current_price": round(current_price or 0, 2),
         "predictions": predictions,
         "signal": signal,
-        "confidence_percentage": confidence
+        "confidence_percentage": confidence,
+        "note": "May use cached data if API limited"
     })
 
 
